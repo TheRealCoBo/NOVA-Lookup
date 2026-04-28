@@ -565,7 +565,9 @@ async function pollOnce() {
     }
     clearTimeout(timeout);
 
-    if (!res.ok) throw new Error(`Bridge unreachable (${res.status}) — check Script ID`);
+    if (res.status === 403) throw new Error('Access denied (403) — in Apps Script deployment, set "Who has access" to "Anyone" (not "Anyone with Google account")');
+    if (res.status === 404) throw new Error('Script not found (404) — check Script ID');
+    if (!res.ok) throw new Error(`Bridge unreachable (${res.status}) — check deployment settings`);
 
     const text = await res.text();
     let json;
