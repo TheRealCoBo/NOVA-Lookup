@@ -544,20 +544,33 @@ async function pollOnce() {
   document.getElementById('pollStatus').textContent = 'Checking session…';
 
   try {
-    // Apps Script GET — returns session state + encrypted data
+    // Apps Script GET — 10 second timeout
     const url = `https://script.google.com/macros/s/${scriptId}/exec?t=${Date.now()}`;
-    const res = await fetch(url, {
-      method: 'GET',
-      redirect: 'follow',
-      credentials: 'omit',
-    });
 
-    if (!res.ok) throw new Error('Bridge unreachable: ' + res.status);
+    const controller = new AbortController();
+    const timeout    = setTimeout(() => controller.abort(), 10000);
+
+    let res;
+    try {
+      res = await fetch(url, {
+        method: 'GET',
+        redirect: 'follow',
+        credentials: 'omit',
+        signal: controller.signal,
+      });
+    } catch(fetchErr) {
+      clearTimeout(timeout);
+      if (fetchErr.name === 'AbortError') throw new Error('Timed out — check Script ID and deployment');
+      throw new Error('Fetch failed: ' + fetchErr.message);
+    }
+    clearTimeout(timeout);
+
+    if (!res.ok) throw new Error(`Bridge unreachable (${res.status}) — check Script ID`);
 
     const text = await res.text();
     let json;
     try { json = JSON.parse(text); }
-    catch { throw new Error('Bad response from bridge'); }
+    catch { throw new Error('Bad response — redeploy the Apps Script as new version'); }
 
     if (json.status === 'error') throw new Error(json.message);
     if (!json.meta) throw new Error('No session data — activate from Vault first');
