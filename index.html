@@ -558,15 +558,19 @@ async function pollOnce() {
     const gistId = localStorage.getItem(CPFX+'gistId');
     if (!gistId) throw new Error('No Gist ID configured');
 
-    // Read Gist raw file — no auth needed, works from any origin
-    const url = `https://gist.githubusercontent.com/raw/${gistId}/session.json?t=${Date.now()}`;
+    // Use GitHub API to read public Gist — works from any origin without auth
+    const url = `https://api.github.com/gists/${gistId}`;
 
     const controller = new AbortController();
     const timeout    = setTimeout(() => controller.abort(), 10000);
 
     let res;
     try {
-      res = await fetch(url, { cache: 'no-store', signal: controller.signal });
+      res = await fetch(url, {
+        cache:   'no-store',
+        signal:  controller.signal,
+        headers: { 'Accept': 'application/vnd.github.v3+json' }
+      });
     } catch(fetchErr) {
       clearTimeout(timeout);
       if (fetchErr.name === 'AbortError') throw new Error('Timed out — check Gist ID');
@@ -575,12 +579,25 @@ async function pollOnce() {
     clearTimeout(timeout);
 
     if (res.status === 404) throw new Error('Gist not found — check Gist ID');
-    if (!res.ok) throw new Error(`Bridge unreachable (${res.status})`);
+    if (res.status === 403) throw new Error('Gist is private — make it public on gist.github.com');
+    if (!res.ok) throw new Error(`GitHub API error (${res.status})`);
 
-    const text = await res.text();
+    const gistData = await res.json();
+
+    // Extract session.json content from the Gist files
+    const sessionFile = gistData.files && gistData.files['session.json'];
+    if (!sessionFile) throw new Error('session.json not found in Gist — activate from Vault first');
+
+    // Get the raw content — either inline or fetch from raw_url
+    let sessionText = sessionFile.content;
+    if (!sessionText && sessionFile.raw_url) {
+      const rawRes = await fetch(sessionFile.raw_url, { cache: 'no-store' });
+      sessionText  = await rawRes.text();
+    }
+
     let json;
-    try { json = JSON.parse(text); }
-    catch { throw new Error('Bad Gist content — activate session from Vault first'); }
+    try { json = JSON.parse(sessionText); }
+    catch { throw new Error('Invalid session data — activate from Vault first'); }
 
     const metaStr = JSON.stringify({ active: json.active, expires: json.expires });
     const dataB64 = json.data || '';
