@@ -546,9 +546,11 @@ function startPolling() {
 }
 
 async function pollOnce() {
-  const sheetId  = localStorage.getItem(CPFX+'sheetId');
-  const scriptId = localStorage.getItem(CPFX+'scriptId');
-  if (!sheetId || !scriptId) return;
+  const gistId = localStorage.getItem(CPFX+'gistId');
+  if (!gistId) {
+    document.getElementById('pollStatus').textContent = 'No Gist ID — tap ⚙ Config';
+    return;
+  }
 
   const dot = document.getElementById('pollDot');
   dot.classList.add('checking');
