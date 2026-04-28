@@ -505,16 +505,27 @@ const strip = s => { const d=String(s??'').replace(/\D/g,''); return d.length>=1
 
 function loadCompCfg() {
   try {
-    document.getElementById('cfgGistId').value = localStorage.getItem(CPFX+'gistId') || '';
-  } catch {}
+    const saved = localStorage.getItem(CPFX+'gistId') || '';
+    document.getElementById('cfgGistId').value = saved;
+  } catch(e) {
+    console.error('loadCompCfg error:', e);
+  }
 }
 
 function saveCompCfg() {
   try {
-    localStorage.setItem(CPFX+'gistId', document.getElementById('cfgGistId').value.trim());
+    const val = document.getElementById('cfgGistId').value.trim();
+    if (!val) {
+      alert('Please enter a Gist ID');
+      return;
+    }
+    localStorage.setItem(CPFX+'gistId', val);
+    document.getElementById('pollStatus').textContent = 'Gist ID saved — connecting…';
     toggleConfig();
     startPolling();
-  } catch {}
+  } catch(e) {
+    alert('Save error: ' + e.message);
+  }
 }
 
 function toggleConfig() {
