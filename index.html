@@ -443,9 +443,9 @@ footer {
     </div>
     <div class="cfg-body">
       <div class="cfg-field">
-        <label class="cfg-lbl">Script ID</label>
-        <input type="text" class="cfg-inp" id="cfgScript" placeholder="Paste the Apps Script Web App ID"/>
-        <span style="font-family:var(--m);font-size:9px;color:var(--text3);margin-top:3px">From the URL between /s/ and /exec</span>
+        <label class="cfg-lbl">Gist ID</label>
+        <input type="text" class="cfg-inp" id="cfgGistId" placeholder="Paste the Gist ID from the Vault"/>
+        <span style="font-family:var(--m);font-size:9px;color:var(--text3);margin-top:3px">Provided by whoever manages the Vault</span>
       </div>
       <button class="btn-save" onclick="saveCompCfg()">Save & Connect</button>
     </div>
@@ -458,7 +458,7 @@ footer {
     <div class="lock-sub">Waiting for the Vault to activate a session. This app will unlock automatically when a session is live.</div>
     <div class="polling-status">
       <div class="poll-dot" id="pollDot"></div>
-      <span id="pollStatus">Configure Script ID to begin polling</span>
+      <span id="pollStatus">Configure Gist ID to begin polling</span>
     </div>
     <button onclick="pollOnce()" style="background:transparent;border:1px solid var(--rim2);color:var(--text3);border-radius:7px;font-family:var(--m);font-size:10px;padding:7px 16px;cursor:pointer;margin-top:4px;">
       🔄 Check Now
@@ -505,13 +505,13 @@ const strip = s => { const d=String(s??'').replace(/\D/g,''); return d.length>=1
 
 function loadCompCfg() {
   try {
-    document.getElementById('cfgScript').value = localStorage.getItem(CPFX+'scriptId') || '';
+    document.getElementById('cfgGistId').value = localStorage.getItem(CPFX+'gistId') || '';
   } catch {}
 }
 
 function saveCompCfg() {
   try {
-    localStorage.setItem(CPFX+'scriptId', document.getElementById('cfgScript').value.trim());
+    localStorage.setItem(CPFX+'gistId', document.getElementById('cfgGistId').value.trim());
     toggleConfig();
     startPolling();
   } catch {}
@@ -524,9 +524,9 @@ function toggleConfig() {
 
 // ── POLLING ───────────────────────────────────────────────────────────────
 function startPolling() {
-  const scriptId = localStorage.getItem(CPFX+'scriptId');
-  if (!scriptId) {
-    document.getElementById('pollStatus').textContent = 'No Script ID — tap ⚙ Config';
+  const gistId = localStorage.getItem(CPFX+'gistId');
+  if (!gistId) {
+    document.getElementById('pollStatus').textContent = 'No Gist ID — tap ⚙ Config';
     return;
   }
   pollOnce();
@@ -544,44 +544,38 @@ async function pollOnce() {
   document.getElementById('pollStatus').textContent = 'Checking session…';
 
   try {
-    // Apps Script GET — 10 second timeout
-    const url = `https://script.google.com/macros/s/${scriptId}/exec?t=${Date.now()}`;
+    const gistId = localStorage.getItem(CPFX+'gistId');
+    if (!gistId) throw new Error('No Gist ID configured');
+
+    // Read Gist raw file — no auth needed, works from any origin
+    const url = `https://gist.githubusercontent.com/raw/${gistId}/session.json?t=${Date.now()}`;
 
     const controller = new AbortController();
     const timeout    = setTimeout(() => controller.abort(), 10000);
 
     let res;
     try {
-      res = await fetch(url, {
-        method: 'GET',
-        redirect: 'follow',
-        credentials: 'omit',
-        signal: controller.signal,
-      });
+      res = await fetch(url, { cache: 'no-store', signal: controller.signal });
     } catch(fetchErr) {
       clearTimeout(timeout);
-      if (fetchErr.name === 'AbortError') throw new Error('Timed out — check Script ID and deployment');
+      if (fetchErr.name === 'AbortError') throw new Error('Timed out — check Gist ID');
       throw new Error('Fetch failed: ' + fetchErr.message);
     }
     clearTimeout(timeout);
 
-    if (res.status === 403) throw new Error('Access denied (403) — in Apps Script deployment, set "Who has access" to "Anyone" (not "Anyone with Google account")');
-    if (res.status === 404) throw new Error('Script not found (404) — check Script ID');
-    if (!res.ok) throw new Error(`Bridge unreachable (${res.status}) — check deployment settings`);
+    if (res.status === 404) throw new Error('Gist not found — check Gist ID');
+    if (!res.ok) throw new Error(`Bridge unreachable (${res.status})`);
 
     const text = await res.text();
     let json;
     try { json = JSON.parse(text); }
-    catch { throw new Error('Bad response — redeploy the Apps Script as new version'); }
+    catch { throw new Error('Bad Gist content — activate session from Vault first'); }
 
-    if (json.status === 'error') throw new Error(json.message);
-    if (!json.meta) throw new Error('No session data — activate from Vault first');
-
-    const metaStr = json.meta;
+    const metaStr = JSON.stringify({ active: json.active, expires: json.expires });
     const dataB64 = json.data || '';
-    const meta    = JSON.parse(metaStr);
+    const meta    = { active: json.active, expires: json.expires };
 
-    if (!meta.active || Date.now() > meta.expires) {
+    if (!json.active || Date.now() > json.expires) {
       // Session not active or expired
       if (sessionLive) {
         // Was live, now killed — wipe memory immediately
@@ -893,12 +887,12 @@ function spill(val) {
 // ── INIT ──────────────────────────────────────────────────────────────────
 window.addEventListener('DOMContentLoaded', () => {
   loadCompCfg();
-  const scriptId = localStorage.getItem(CPFX+'scriptId');
-  if (scriptId) {
+  const gistId = localStorage.getItem(CPFX+'gistId');
+  if (gistId) {
     startPolling();
   } else {
     document.getElementById('sessionPill').querySelector('span').textContent = 'Not configured';
-    document.getElementById('pollStatus').textContent = 'Tap ⚙ Config and enter the Script ID';
+    document.getElementById('pollStatus').textContent = 'Tap ⚙ Config and enter the Gist ID';
   }
 });
 </script>
